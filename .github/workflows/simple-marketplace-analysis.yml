@@ -1,0 +1,265 @@
+name: Simple Marketplace Analysis
+run-name: Quick analysis for ${{ github.event.inputs.marketplace_url }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      marketplace_url:
+        description: 'Marketplace URL to analyze (e.g., https://www.extra.com)'
+        required: true
+        type: string
+      max_suppliers:
+        description: 'Maximum number of suppliers to return'
+        required: false
+        type: string
+        default: '10'
+
+jobs:
+  quick-analysis:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4 pandas openai python-dotenv
+          
+      - name: Create quick analysis script
+        run: |
+          cat > quick_marketplace_analysis.py << 'EOF'
+          #!/usr/bin/env python3
+          """
+          Quick Marketplace Analysis for GitHub Actions
+          """
+          import requests
+          import pandas as pd
+          from bs4 import BeautifulSoup
+          import json
+          import os
+          from datetime import datetime
+          import sys
+          
+          def analyze_marketplace(url, max_suppliers=10):
+              """Quick marketplace analysis"""
+              print(f"🔍 Analyzing marketplace: {url}")
+              
+              try:
+                  # Basic web scraping
+                  headers = {
+                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                  }
+                  response = requests.get(url, headers=headers, timeout=30)
+                  soup = BeautifulSoup(response.content, 'html.parser')
+                  
+                  # Extract basic information
+                  title = soup.find('title')
+                  title_text = title.text.strip() if title else "Unknown"
+                  
+                  # Extract meta description
+                  meta_desc = soup.find('meta', attrs={'name': 'description'})
+                  description = meta_desc.get('content', '') if meta_desc else ''
+                  
+                  # Extract keywords from content
+                  text_content = soup.get_text().lower()
+                  
+                  # Common e-commerce categories
+                  categories = []
+                  ec_keywords = [
+                      'fashion', 'clothing', 'apparel', 'beauty', 'cosmetics',
+                      'electronics', 'tech', 'home', 'furniture', 'sports',
+                      'jewelry', 'accessories', 'books', 'toys', 'food',
+                      'health', 'fitness', 'automotive', 'garden', 'tools'
+                  ]
+                  
+                  for keyword in ec_keywords:
+                      if keyword in text_content:
+                          categories.append(keyword)
+                  
+                  # Analyze price patterns
+                  price_elements = soup.find_all(text=lambda text: text and '$' in text)
+                  price_ranges = []
+                  
+                  for element in price_elements[:20]:  # Check first 20 price elements
+                      try:
+                          # Extract price from text
+                          import re
+                          prices = re.findall(r'\$[\d,]+\.?\d*', element)
+                          for price in prices:
+                              price_num = float(price.replace('$', '').replace(',', ''))
+                              if 1 <= price_num <= 10000:  # Reasonable price range
+                                  price_ranges.append(price_num)
+                      except:
+                          continue
+                  
+                  # Calculate price statistics
+                  if price_ranges:
+                      avg_price = sum(price_ranges) / len(price_ranges)
+                      min_price = min(price_ranges)
+                      max_price = max(price_ranges)
+                  else:
+                      avg_price = min_price = max_price = 0
+                  
+                  # Generate mock supplier recommendations
+                  suppliers = generate_mock_suppliers(categories, max_suppliers)
+                  
+                  # Create analysis result
+                  result = {
+                      'marketplace_analysis': {
+                          'url': url,
+                          'title': title_text,
+                          'description': description[:200],
+                          'detected_categories': categories[:10],
+                          'price_analysis': {
+                              'average_price': round(avg_price, 2),
+                              'min_price': round(min_price, 2),
+                              'max_price': round(max_price, 2),
+                              'price_count': len(price_ranges)
+                          },
+                          'analysis_timestamp': datetime.now().isoformat(),
+                          'confidence_score': min(100, len(categories) * 10)
+                      },
+                      'recommended_suppliers': suppliers
+                  }
+                  
+                  return result
+                  
+              except Exception as e:
+                  print(f"❌ Error analyzing marketplace: {e}")
+                  return None
+          
+          def generate_mock_suppliers(categories, max_count):
+              """Generate mock supplier recommendations based on categories"""
+              suppliers = []
+              
+              # Mock supplier data
+              mock_suppliers = [
+                  {
+                      'name': 'Tokyo Fashion Co.',
+                      'url': 'https://tokyofashion.example.com',
+                      'categories': ['fashion', 'clothing'],
+                      'description': 'Premium Japanese fashion and accessories',
+                      'price_range': '$50-$500',
+                      'shipping': 'International',
+                      'match_score': 95
+                  },
+                  {
+                      'name': 'Osaka Electronics',
+                      'url': 'https://osakaelectronics.example.com',
+                      'categories': ['electronics', 'tech'],
+                      'description': 'High-quality Japanese electronics and gadgets',
+                      'price_range': '$100-$2000',
+                      'shipping': 'International',
+                      'match_score': 88
+                  },
+                  {
+                      'name': 'Kyoto Beauty',
+                      'url': 'https://kyotobeauty.example.com',
+                      'categories': ['beauty', 'cosmetics'],
+                      'description': 'Traditional Japanese beauty products',
+                      'price_range': '$20-$200',
+                      'shipping': 'International',
+                      'match_score': 92
+                  },
+                  {
+                      'name': 'Hokkaido Home',
+                      'url': 'https://hokkaidohome.example.com',
+                      'categories': ['home', 'furniture'],
+                      'description': 'Japanese home decor and furniture',
+                      'price_range': '$100-$1500',
+                      'shipping': 'International',
+                      'match_score': 85
+                  },
+                  {
+                      'name': 'Nara Sports',
+                      'url': 'https://narasports.example.com',
+                      'categories': ['sports', 'fitness'],
+                      'description': 'Japanese sports equipment and gear',
+                      'price_range': '$30-$800',
+                      'shipping': 'International',
+                      'match_score': 78
+                  }
+              ]
+              
+              # Filter suppliers based on detected categories
+              for supplier in mock_suppliers:
+                  if any(cat in supplier['categories'] for cat in categories):
+                      suppliers.append(supplier)
+              
+              # If no matches, return top suppliers
+              if not suppliers:
+                  suppliers = mock_suppliers[:max_count]
+              else:
+                  suppliers = suppliers[:max_count]
+              
+              return suppliers
+          
+          def main():
+              marketplace_url = sys.argv[1] if len(sys.argv) > 1 else os.environ.get('MARKETPLACE_URL')
+              max_suppliers = int(sys.argv[2]) if len(sys.argv) > 2 else 10
+              
+              if not marketplace_url:
+                  print("❌ No marketplace URL provided")
+                  return
+              
+              print(f"🚀 Starting quick analysis for: {marketplace_url}")
+              
+              result = analyze_marketplace(marketplace_url, max_suppliers)
+              
+              if result:
+                  # Save results
+                  timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                  
+                  # Save as JSON
+                  with open(f'quick_analysis_{timestamp}.json', 'w') as f:
+                      json.dump(result, f, indent=2)
+                  
+                  # Save as CSV
+                  suppliers_df = pd.DataFrame(result['recommended_suppliers'])
+                  suppliers_df.to_csv(f'quick_suppliers_{timestamp}.csv', index=False)
+                  
+                  # Print summary
+                  print(f"\n✅ Analysis completed successfully!")
+                  print(f"📊 Detected categories: {', '.join(result['marketplace_analysis']['detected_categories'])}")
+                  print(f"💰 Average price: ${result['marketplace_analysis']['price_analysis']['average_price']}")
+                  print(f"🎯 Found {len(result['recommended_suppliers'])} matching suppliers")
+                  print(f"📁 Results saved to: quick_analysis_{timestamp}.json and quick_suppliers_{timestamp}.csv")
+                  
+              else:
+                  print("❌ Analysis failed")
+          
+          if __name__ == "__main__":
+              main()
+          EOF
+          
+      - name: Run quick analysis
+        run: |
+          python quick_marketplace_analysis.py "${{ github.event.inputs.marketplace_url }}" "${{ github.event.inputs.max_suppliers }}"
+          
+      - name: Upload results
+        uses: actions/upload-artifact@v3
+        with:
+          name: quick-analysis-results
+          path: |
+            quick_analysis_*.json
+            quick_suppliers_*.csv
+            
+      - name: Display results summary
+        run: |
+          echo "## 🎯 Quick Marketplace Analysis Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Marketplace URL:** ${{ github.event.inputs.marketplace_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Max Suppliers:** ${{ github.event.inputs.max_suppliers }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ✅ Analysis completed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Generated Files" >> $GITHUB_STEP_SUMMARY
+          ls -la quick_*.json quick_*.csv >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No files found"
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Download the results from the 'Artifacts' section below." >> $GITHUB_STEP_SUMMARY

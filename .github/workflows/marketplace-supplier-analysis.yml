@@ -1,0 +1,121 @@
+name: Marketplace Supplier Analysis
+run-name: Analyzing marketplace ${{ github.event.inputs.marketplace_url }} for supplier matching
+
+on:
+  workflow_dispatch:
+    inputs:
+      marketplace_url:
+        description: 'Marketplace URL to analyze'
+        required: true
+        type: string
+        default: 'https://www.extra.com'
+      analysis_type:
+        description: 'Type of analysis to perform'
+        required: true
+        type: choice
+        options:
+          - 'quick'
+          - 'detailed'
+          - 'batch'
+        default: 'detailed'
+      output_format:
+        description: 'Output format'
+        required: true
+        type: choice
+        options:
+          - 'csv'
+          - 'json'
+          - 'both'
+        default: 'both'
+
+jobs:
+  analyze-marketplace:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4 pandas openai selenium scrapy
+          pip install python-dotenv
+          
+      - name: Set up environment variables
+        run: |
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env
+          echo "STORELEADS_API_KEY=5dae5c14-d279-4dc5-7fb9-495d7d46" >> .env
+          
+      - name: Copy analysis scripts
+        run: |
+          mkdir -p analysis_workspace
+          cp -r "Obsidian Vault/Suppliersourcing_for_marketplaces/"* analysis_workspace/
+          cd analysis_workspace
+          
+      - name: Run marketplace analysis
+        run: |
+          cd analysis_workspace
+          
+          # Create input file for the analysis
+          echo "${{ github.event.inputs.marketplace_url }}" > marketplace_input.txt
+          
+          # Run the appropriate analysis based on type
+          if [ "${{ github.event.inputs.analysis_type }}" = "quick" ]; then
+            python simple_test_execution.py
+          elif [ "${{ github.event.inputs.analysis_type }}" = "detailed" ]; then
+            python enhanced_marketplace_analysis.py
+          elif [ "${{ github.event.inputs.analysis_type }}" = "batch" ]; then
+            python batch_marketplace_analysis.py
+          fi
+          
+      - name: Upload analysis results
+        uses: actions/upload-artifact@v3
+        with:
+          name: marketplace-analysis-results
+          path: analysis_workspace/matching_results_*.csv
+          
+      - name: Generate summary report
+        run: |
+          cd analysis_workspace
+          
+          # Create a summary report
+          echo "# Marketplace Analysis Report" > analysis_summary.md
+          echo "" >> analysis_summary.md
+          echo "**Analysis Date:** $(date)" >> analysis_summary.md
+          echo "**Marketplace URL:** ${{ github.event.inputs.marketplace_url }}" >> analysis_summary.md
+          echo "**Analysis Type:** ${{ github.event.inputs.analysis_type }}" >> analysis_summary.md
+          echo "" >> analysis_summary.md
+          
+          # Count results
+          result_count=$(ls matching_results_*.csv 2>/dev/null | wc -l)
+          echo "**Number of result files:** $result_count" >> analysis_summary.md
+          echo "" >> analysis_summary.md
+          
+          # List result files
+          echo "## Generated Files" >> analysis_summary.md
+          ls -la matching_results_*.csv >> analysis_summary.md 2>/dev/null || echo "No CSV files found"
+          ls -la matching_results_*.json >> analysis_summary.md 2>/dev/null || echo "No JSON files found"
+          
+      - name: Upload summary report
+        uses: actions/upload-artifact@v3
+        with:
+          name: analysis-summary
+          path: analysis_workspace/analysis_summary.md
+          
+      - name: Comment on workflow run
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "## 🎯 Marketplace Analysis Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Marketplace:** ${{ github.event.inputs.marketplace_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Analysis Type:** ${{ github.event.inputs.analysis_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ✅ Completed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Results" >> $GITHUB_STEP_SUMMARY
+          echo "Check the 'Artifacts' section below to download the analysis results." >> $GITHUB_STEP_SUMMARY
