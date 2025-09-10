@@ -60,13 +60,21 @@ jobs:
       - name: Setup analysis workspace
         run: |
           mkdir -p analysis_workspace
-          # Copy the entire Suppliersourcing_for_marketplaces directory
-          if [ -d "Obsidian Vault/Suppliersourcing_for_marketplaces" ]; then
-            cp -r "Obsidian Vault/Suppliersourcing_for_marketplaces/"* analysis_workspace/
-            echo "✅ Copied existing analysis scripts and data"
+          
+          # Copy data files
+          if [ -d "data" ]; then
+            cp -r data/* analysis_workspace/
+            echo "✅ Copied data files"
           else
-            echo "❌ Suppliersourcing_for_marketplaces directory not found"
+            echo "❌ Data directory not found"
             exit 1
+          fi
+          
+          # Create Storeleads_shopify directory structure for compatibility
+          mkdir -p analysis_workspace/Storeleads_shopify
+          if [ -f "analysis_workspace/all_japan_stores_unlimited.csv" ]; then
+            mv analysis_workspace/all_japan_stores_unlimited.csv analysis_workspace/Storeleads_shopify/
+            echo "✅ Moved database to Storeleads_shopify directory"
           fi
           
           # Copy enhanced analyzer script
@@ -122,20 +130,9 @@ jobs:
           echo "Analysis type: ${{ github.event.inputs.analysis_type }}"
           echo "Max suppliers: ${{ github.event.inputs.max_suppliers }}"
           
-          # Check which scripts are available and run appropriate analysis
-          if [ -f "enhanced_marketplace_analysis.py" ] && [ "${{ github.event.inputs.analysis_type }}" = "detailed" ]; then
-            echo "🚀 Running detailed analysis with enhanced_marketplace_analysis.py"
-            python enhanced_marketplace_analysis.py
-          elif [ -f "batch_marketplace_analysis.py" ] && [ "${{ github.event.inputs.analysis_type }}" = "batch" ]; then
-            echo "🚀 Running batch analysis with batch_marketplace_analysis.py"
-            python batch_marketplace_analysis.py
-          elif [ -f "simple_test_execution.py" ] && [ "${{ github.event.inputs.analysis_type }}" = "quick" ]; then
-            echo "🚀 Running quick analysis with simple_test_execution.py"
-            python simple_test_execution.py
-          else
-            echo "🚀 Running enhanced analysis with real database"
-            python github_actions_enhanced_analyzer.py "${{ github.event.inputs.marketplace_url }}" "${{ github.event.inputs.max_suppliers }}"
-          fi
+          # Run enhanced analysis with real database
+          echo "🚀 Running enhanced analysis with real database"
+          python github_actions_enhanced_analyzer.py "${{ github.event.inputs.marketplace_url }}" "${{ github.event.inputs.max_suppliers }}"
           
           # Check if results were generated
           if [ -f matching_results_*.csv ]; then
