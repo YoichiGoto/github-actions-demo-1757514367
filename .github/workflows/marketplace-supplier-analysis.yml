@@ -55,17 +55,25 @@ jobs:
       - name: Set up environment variables
         run: |
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env
-          echo "STORELEADS_API_KEY=5dae5c14-d279-4dc5-7fb9-495d7d46" >> .env
+          echo "STORELEADS_API_KEY=${{ secrets.STORELEADS_API_KEY }}" >> .env
           
       - name: Setup analysis workspace
         run: |
           mkdir -p analysis_workspace
-          # Check if the source directory exists
+          # Copy the entire Suppliersourcing_for_marketplaces directory
           if [ -d "Obsidian Vault/Suppliersourcing_for_marketplaces" ]; then
             cp -r "Obsidian Vault/Suppliersourcing_for_marketplaces/"* analysis_workspace/
-            echo "✅ Copied existing analysis scripts"
+            echo "✅ Copied existing analysis scripts and data"
           else
-            echo "📁 Source directory not found, creating minimal analysis setup"
+            echo "❌ Suppliersourcing_for_marketplaces directory not found"
+            exit 1
+          fi
+          
+          # Copy enhanced analyzer script
+          if [ -f "scripts/github_actions_enhanced_analyzer.py" ]; then
+            cp scripts/github_actions_enhanced_analyzer.py analysis_workspace/
+            chmod +x analysis_workspace/github_actions_enhanced_analyzer.py
+            echo "✅ Copied enhanced analyzer script"
           fi
           
           # Copy fallback analyzer script
@@ -75,39 +83,67 @@ jobs:
             echo "✅ Copied fallback analyzer script"
           fi
           
+      - name: Verify data files
+        run: |
+          cd analysis_workspace
+          echo "📊 Checking data files..."
+          
+          # Check for CSV database
+          if [ -f "Storeleads_shopify/all_japan_stores_unlimited.csv" ]; then
+            echo "✅ Found all_japan_stores_unlimited.csv"
+            wc -l Storeleads_shopify/all_japan_stores_unlimited.csv
+          else
+            echo "❌ all_japan_stores_unlimited.csv not found"
+          fi
+          
+          # Check for marketplace list
+          if [ -f "marketplacelist.txt" ]; then
+            echo "✅ Found marketplacelist.txt"
+            wc -l marketplacelist.txt
+          else
+            echo "⚠️ marketplacelist.txt not found"
+          fi
+          
+          # List available Python scripts
+          echo "🐍 Available Python scripts:"
+          ls -la *.py | head -10
+          
+      - name: Create input file for analysis
+        run: |
+          cd analysis_workspace
+          echo "${{ github.event.inputs.marketplace_url }}" > marketplace_input.txt
+          echo "📝 Created marketplace_input.txt with URL: ${{ github.event.inputs.marketplace_url }}"
+          
       - name: Run marketplace analysis
         run: |
           cd analysis_workspace
           
-          # Create input file for the analysis
-          echo "${{ github.event.inputs.marketplace_url }}" > marketplace_input.txt
+          echo "🚀 Starting marketplace analysis..."
+          echo "Analysis type: ${{ github.event.inputs.analysis_type }}"
+          echo "Max suppliers: ${{ github.event.inputs.max_suppliers }}"
           
           # Check which scripts are available and run appropriate analysis
           if [ -f "enhanced_marketplace_analysis.py" ] && [ "${{ github.event.inputs.analysis_type }}" = "detailed" ]; then
-            echo "🚀 Running detailed analysis with existing script"
+            echo "🚀 Running detailed analysis with enhanced_marketplace_analysis.py"
             python enhanced_marketplace_analysis.py
           elif [ -f "batch_marketplace_analysis.py" ] && [ "${{ github.event.inputs.analysis_type }}" = "batch" ]; then
-            echo "🚀 Running batch analysis with existing script"
+            echo "🚀 Running batch analysis with batch_marketplace_analysis.py"
             python batch_marketplace_analysis.py
           elif [ -f "simple_test_execution.py" ] && [ "${{ github.event.inputs.analysis_type }}" = "quick" ]; then
-            echo "🚀 Running quick analysis with existing script"
+            echo "🚀 Running quick analysis with simple_test_execution.py"
             python simple_test_execution.py
           else
-            echo "🚀 Running fallback analysis with built-in script"
-            python simple_marketplace_analyzer.py "${{ github.event.inputs.marketplace_url }}"
+            echo "🚀 Running enhanced analysis with real database"
+            python github_actions_enhanced_analyzer.py "${{ github.event.inputs.marketplace_url }}" "${{ github.event.inputs.max_suppliers }}"
           fi
           
-          # If no results were generated, try the GitHub Actions optimized script
-          if [ ! -f matching_results_*.csv ]; then
-            echo "🔄 No results from primary scripts, using GitHub Actions optimized analyzer"
-            if [ ! -f github_actions_marketplace_analyzer.py ]; then
-              # Download the optimized script if not present
-              curl -o github_actions_marketplace_analyzer.py https://raw.githubusercontent.com/YoichiGoto/github-actions-demo-1757514367/main/scripts/github_actions_marketplace_analyzer.py || echo "Could not download optimized script"
-            fi
-            
-            if [ -f github_actions_marketplace_analyzer.py ]; then
-              python github_actions_marketplace_analyzer.py "${{ github.event.inputs.marketplace_url }}" "${{ github.event.inputs.max_suppliers }}"
-            fi
+          # Check if results were generated
+          if [ -f matching_results_*.csv ]; then
+            echo "✅ Results generated successfully"
+            ls -la matching_results_*.csv
+          else
+            echo "⚠️ No CSV results found, checking for other output files"
+            ls -la *.csv *.json 2>/dev/null || echo "No output files found"
           fi
           
       - name: Upload analysis results
@@ -115,6 +151,12 @@ jobs:
         with:
           name: marketplace-analysis-results
           path: analysis_workspace/matching_results_*.csv
+          
+      - name: Upload JSON results
+        uses: actions/upload-artifact@v4
+        with:
+          name: marketplace-analysis-json
+          path: analysis_workspace/matching_results_*.json
           
       - name: Generate summary report
         run: |
@@ -126,17 +168,34 @@ jobs:
           echo "**Analysis Date:** $(date)" >> analysis_summary.md
           echo "**Marketplace URL:** ${{ github.event.inputs.marketplace_url }}" >> analysis_summary.md
           echo "**Analysis Type:** ${{ github.event.inputs.analysis_type }}" >> analysis_summary.md
+          echo "**Max Suppliers:** ${{ github.event.inputs.max_suppliers }}" >> analysis_summary.md
           echo "" >> analysis_summary.md
           
           # Count results
           result_count=$(ls matching_results_*.csv 2>/dev/null | wc -l)
-          echo "**Number of result files:** $result_count" >> analysis_summary.md
+          echo "**Number of CSV result files:** $result_count" >> analysis_summary.md
+          
+          json_count=$(ls matching_results_*.json 2>/dev/null | wc -l)
+          echo "**Number of JSON result files:** $json_count" >> analysis_summary.md
           echo "" >> analysis_summary.md
           
           # List result files
           echo "## Generated Files" >> analysis_summary.md
+          echo "### CSV Files" >> analysis_summary.md
           ls -la matching_results_*.csv >> analysis_summary.md 2>/dev/null || echo "No CSV files found"
+          
+          echo "### JSON Files" >> analysis_summary.md
           ls -la matching_results_*.json >> analysis_summary.md 2>/dev/null || echo "No JSON files found"
+          
+          # Show sample data if available
+          if [ -f matching_results_*.csv ]; then
+            echo "" >> analysis_summary.md
+            echo "## Sample Results" >> analysis_summary.md
+            echo "### First 5 lines of CSV:" >> analysis_summary.md
+            echo '```' >> analysis_summary.md
+            head -5 matching_results_*.csv >> analysis_summary.md 2>/dev/null || echo "Could not read CSV file"
+            echo '```' >> analysis_summary.md
+          fi
           
       - name: Upload summary report
         uses: actions/upload-artifact@v4
@@ -151,7 +210,13 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Marketplace:** ${{ github.event.inputs.marketplace_url }}" >> $GITHUB_STEP_SUMMARY
           echo "**Analysis Type:** ${{ github.event.inputs.analysis_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Max Suppliers:** ${{ github.event.inputs.max_suppliers }}" >> $GITHUB_STEP_SUMMARY
           echo "**Status:** ✅ Completed successfully" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📊 Results" >> $GITHUB_STEP_SUMMARY
           echo "Check the 'Artifacts' section below to download the analysis results." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔍 Data Sources Used" >> $GITHUB_STEP_SUMMARY
+          echo "- all_japan_stores_unlimited.csv (Japanese Shopify stores database)" >> $GITHUB_STEP_SUMMARY
+          echo "- Enhanced marketplace analysis scripts" >> $GITHUB_STEP_SUMMARY
+          echo "- StoreLeads API integration" >> $GITHUB_STEP_SUMMARY
