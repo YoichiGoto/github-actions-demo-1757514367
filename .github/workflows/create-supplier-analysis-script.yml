@@ -1,0 +1,470 @@
+name: Create Supplier Analysis Script
+run-name: Generate optimized supplier analysis for GitHub Actions
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create-script:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Create optimized supplier analysis script
+        run: |
+          mkdir -p scripts
+          
+          cat > scripts/github_actions_marketplace_analyzer.py << 'EOF'
+#!/usr/bin/env python3
+"""
+GitHub Actions Optimized Marketplace Supplier Analysis
+Based on the comprehensive system in Suppliersourcing_for_marketplaces
+"""
+
+import requests
+import pandas as pd
+from bs4 import BeautifulSoup
+import json
+import sys
+import os
+from datetime import datetime
+import time
+import random
+from urllib.parse import urlparse, urljoin
+import re
+
+class MarketplaceAnalyzer:
+    def __init__(self, marketplace_url, max_suppliers=20):
+        self.marketplace_url = marketplace_url
+        self.max_suppliers = max_suppliers
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        })
+        
+    def analyze_marketplace(self):
+        """Comprehensive marketplace analysis"""
+        print(f"🔍 Starting analysis for: {self.marketplace_url}")
+        
+        try:
+            # Get marketplace data
+            response = self.session.get(self.marketplace_url, timeout=30)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Extract basic information
+            analysis_result = {
+                'url': self.marketplace_url,
+                'title': self._extract_title(soup),
+                'description': self._extract_description(soup),
+                'categories': self._extract_categories(soup),
+                'price_analysis': self._analyze_prices(soup),
+                'brand_analysis': self._analyze_brands(soup),
+                'language': self._detect_language(soup),
+                'country': self._detect_country(soup),
+                'analysis_timestamp': datetime.now().isoformat()
+            }
+            
+            print(f"✅ Marketplace analysis completed")
+            print(f"   Title: {analysis_result['title']}")
+            print(f"   Categories: {', '.join(analysis_result['categories'][:5])}")
+            print(f"   Detected language: {analysis_result['language']}")
+            
+            return analysis_result
+            
+        except Exception as e:
+            print(f"❌ Error analyzing marketplace: {e}")
+            return None
+    
+    def _extract_title(self, soup):
+        """Extract marketplace title"""
+        title_elem = soup.find('title')
+        return title_elem.text.strip() if title_elem else "Unknown Marketplace"
+    
+    def _extract_description(self, soup):
+        """Extract marketplace description"""
+        meta_desc = soup.find('meta', attrs={'name': 'description'})
+        if meta_desc:
+            return meta_desc.get('content', '')[:200]
+        
+        # Fallback: extract from first paragraph
+        first_p = soup.find('p')
+        if first_p:
+            return first_p.get_text()[:200]
+        
+        return ""
+    
+    def _extract_categories(self, soup):
+        """Extract product categories from marketplace"""
+        categories = []
+        text_content = soup.get_text().lower()
+        
+        # Common e-commerce categories
+        category_keywords = {
+            'fashion': ['fashion', 'clothing', 'apparel', 'dress', 'shirt', 'pants'],
+            'beauty': ['beauty', 'cosmetics', 'makeup', 'skincare', 'perfume'],
+            'electronics': ['electronics', 'phone', 'laptop', 'computer', 'gadget'],
+            'home': ['home', 'furniture', 'decor', 'kitchen', 'bedroom'],
+            'sports': ['sports', 'fitness', 'outdoor', 'exercise', 'athletic'],
+            'jewelry': ['jewelry', 'watch', 'necklace', 'ring', 'bracelet'],
+            'books': ['books', 'reading', 'literature', 'novel', 'textbook'],
+            'toys': ['toys', 'games', 'children', 'kids', 'play'],
+            'automotive': ['car', 'auto', 'vehicle', 'parts', 'automotive'],
+            'health': ['health', 'medical', 'wellness', 'supplement', 'pharmacy']
+        }
+        
+        for category, keywords in category_keywords.items():
+            if any(keyword in text_content for keyword in keywords):
+                categories.append(category)
+        
+        return categories[:10]  # Limit to top 10 categories
+    
+    def _analyze_prices(self, soup):
+        """Analyze price patterns in the marketplace"""
+        price_patterns = [
+            r'\$[\d,]+\.?\d*',  # USD
+            r'€[\d,]+\.?\d*',   # EUR
+            r'£[\d,]+\.?\d*',   # GBP
+            r'¥[\d,]+',         # JPY/CNY
+            r'₹[\d,]+\.?\d*',   # INR
+        ]
+        
+        prices = []
+        text_content = soup.get_text()
+        
+        for pattern in price_patterns:
+            matches = re.findall(pattern, text_content)
+            for match in matches:
+                try:
+                    # Extract numeric value
+                    numeric_value = re.sub(r'[^\d.]', '', match)
+                    if numeric_value:
+                        price = float(numeric_value)
+                        if 1 <= price <= 50000:  # Reasonable price range
+                            prices.append(price)
+                except:
+                    continue
+        
+        if prices:
+            return {
+                'average_price': round(sum(prices) / len(prices), 2),
+                'min_price': round(min(prices), 2),
+                'max_price': round(max(prices), 2),
+                'price_count': len(prices),
+                'currency_detected': self._detect_currency(soup)
+            }
+        
+        return {
+            'average_price': 0,
+            'min_price': 0,
+            'max_price': 0,
+            'price_count': 0,
+            'currency_detected': 'USD'
+        }
+    
+    def _analyze_brands(self, soup):
+        """Analyze brand presence and positioning"""
+        text_content = soup.get_text().lower()
+        
+        # Look for luxury indicators
+        luxury_indicators = ['luxury', 'premium', 'exclusive', 'designer', 'high-end']
+        luxury_score = sum(1 for indicator in luxury_indicators if indicator in text_content)
+        
+        # Look for value indicators
+        value_indicators = ['affordable', 'cheap', 'discount', 'sale', 'budget']
+        value_score = sum(1 for indicator in value_indicators if indicator in text_content)
+        
+        if luxury_score > value_score:
+            positioning = 'premium'
+        elif value_score > luxury_score:
+            positioning = 'value'
+        else:
+            positioning = 'mid-market'
+        
+        return {
+            'positioning': positioning,
+            'luxury_score': luxury_score,
+            'value_score': value_score
+        }
+    
+    def _detect_language(self, soup):
+        """Detect primary language of the marketplace"""
+        lang_attr = soup.find('html', {'lang': True})
+        if lang_attr:
+            return lang_attr.get('lang', 'en')[:2]
+        
+        # Fallback: analyze text content
+        text_sample = soup.get_text()[:1000].lower()
+        
+        language_indicators = {
+            'en': ['the', 'and', 'for', 'with', 'this', 'that'],
+            'es': ['el', 'la', 'de', 'en', 'un', 'es'],
+            'fr': ['le', 'de', 'et', 'à', 'un', 'il'],
+            'de': ['der', 'die', 'und', 'in', 'den', 'von'],
+            'it': ['il', 'di', 'e', 'la', 'in', 'da'],
+            'pt': ['o', 'de', 'e', 'do', 'da', 'em']
+        }
+        
+        language_scores = {}
+        for lang, indicators in language_indicators.items():
+            score = sum(1 for indicator in indicators if indicator in text_sample)
+            language_scores[lang] = score
+        
+        return max(language_scores, key=language_scores.get) if language_scores else 'en'
+    
+    def _detect_country(self, soup):
+        """Detect target country/region"""
+        # Check for country indicators in URL
+        domain = urlparse(self.marketplace_url).netloc.lower()
+        
+        country_domains = {
+            '.uk': 'GB', '.co.uk': 'GB',
+            '.de': 'DE', '.fr': 'FR', '.es': 'ES', '.it': 'IT',
+            '.ca': 'CA', '.au': 'AU', '.jp': 'JP', '.br': 'BR',
+            '.in': 'IN', '.cn': 'CN', '.mx': 'MX'
+        }
+        
+        for domain_ext, country in country_domains.items():
+            if domain_ext in domain:
+                return country
+        
+        return 'US'  # Default
+    
+    def _detect_currency(self, soup):
+        """Detect primary currency"""
+        text_content = soup.get_text()
+        
+        currency_indicators = {
+            'USD': ['$', 'usd', 'dollar'],
+            'EUR': ['€', 'eur', 'euro'],
+            'GBP': ['£', 'gbp', 'pound'],
+            'JPY': ['¥', 'jpy', 'yen'],
+            'INR': ['₹', 'inr', 'rupee']
+        }
+        
+        for currency, indicators in currency_indicators.items():
+            if any(indicator in text_content.lower() for indicator in indicators):
+                return currency
+        
+        return 'USD'  # Default
+    
+    def generate_supplier_recommendations(self, marketplace_analysis):
+        """Generate supplier recommendations based on analysis"""
+        print("🎯 Generating supplier recommendations...")
+        
+        # Mock supplier database - in real implementation, this would query actual database
+        mock_suppliers = [
+            {
+                'store_name': 'Tokyo Fashion House',
+                'store_url': 'https://tokyofashion.example.com',
+                'categories': 'Fashion, Accessories, Apparel',
+                'description': 'Premium Japanese fashion brand specializing in contemporary designs with traditional elements',
+                'price_range': '$80-$800',
+                'international_shipping': 'Yes',
+                'estimated_monthly_sales': '$50,000',
+                'unique_selling_points': 'Handcrafted quality, Sustainable materials, Limited editions',
+                'compatibility_score': 0
+            },
+            {
+                'store_name': 'Osaka Electronics Pro',
+                'store_url': 'https://osakaelectronics.example.com',
+                'categories': 'Electronics, Gadgets, Technology',
+                'description': 'High-quality Japanese electronics and innovative gadgets for tech enthusiasts',
+                'price_range': '$100-$3000',
+                'international_shipping': 'Yes',
+                'estimated_monthly_sales': '$120,000',
+                'unique_selling_points': 'Latest technology, Quality assurance, Technical support',
+                'compatibility_score': 0
+            },
+            {
+                'store_name': 'Kyoto Beauty Secrets',
+                'store_url': 'https://kyotobeauty.example.com',
+                'categories': 'Beauty, Cosmetics, Skincare',
+                'description': 'Traditional Japanese beauty products with modern formulations',
+                'price_range': '$25-$300',
+                'international_shipping': 'Yes',
+                'estimated_monthly_sales': '$35,000',
+                'unique_selling_points': 'Natural ingredients, Traditional recipes, Anti-aging focus',
+                'compatibility_score': 0
+            },
+            {
+                'store_name': 'Hokkaido Home & Living',
+                'store_url': 'https://hokkaidohome.example.com',
+                'categories': 'Home, Furniture, Decor',
+                'description': 'Minimalist Japanese home decor and furniture with clean lines',
+                'price_range': '$150-$2500',
+                'international_shipping': 'Yes',
+                'estimated_monthly_sales': '$80,000',
+                'unique_selling_points': 'Minimalist design, Space-saving solutions, Eco-friendly materials',
+                'compatibility_score': 0
+            },
+            {
+                'store_name': 'Nara Sports & Outdoor',
+                'store_url': 'https://narasports.example.com',
+                'categories': 'Sports, Outdoor, Fitness',
+                'description': 'Japanese sports equipment and outdoor gear for active lifestyles',
+                'price_range': '$40-$1200',
+                'international_shipping': 'Yes',
+                'estimated_monthly_sales': '$45,000',
+                'unique_selling_points': 'Durable construction, Innovative design, Performance focused',
+                'compatibility_score': 0
+            },
+            {
+                'store_name': 'Hiroshima Jewelry Craft',
+                'store_url': 'https://hiroshimajewelry.example.com',
+                'categories': 'Jewelry, Accessories, Watches',
+                'description': 'Handcrafted Japanese jewelry with modern and traditional designs',
+                'price_range': '$200-$5000',
+                'international_shipping': 'Yes',
+                'estimated_monthly_sales': '$60,000',
+                'unique_selling_points': 'Handcrafted pieces, Precious metals, Custom designs',
+                'compatibility_score': 0
+            }
+        ]
+        
+        # Calculate compatibility scores
+        for supplier in mock_suppliers:
+            score = self._calculate_compatibility_score(supplier, marketplace_analysis)
+            supplier['compatibility_score'] = score
+        
+        # Sort by compatibility score
+        mock_suppliers.sort(key=lambda x: x['compatibility_score'], reverse=True)
+        
+        # Return top suppliers
+        recommended_suppliers = mock_suppliers[:self.max_suppliers]
+        
+        print(f"✅ Generated {len(recommended_suppliers)} supplier recommendations")
+        return recommended_suppliers
+    
+    def _calculate_compatibility_score(self, supplier, marketplace_analysis):
+        """Calculate compatibility score between supplier and marketplace"""
+        score = 0
+        
+        # Category matching
+        supplier_categories = supplier['categories'].lower().split(', ')
+        marketplace_categories = marketplace_analysis['categories']
+        
+        category_matches = sum(1 for cat in marketplace_categories 
+                             if any(cat in sup_cat for sup_cat in supplier_categories))
+        score += category_matches * 20
+        
+        # Price range compatibility
+        marketplace_avg_price = marketplace_analysis['price_analysis']['average_price']
+        if marketplace_avg_price > 0:
+            # Extract supplier price range
+            price_range = supplier['price_range']
+            price_numbers = re.findall(r'\d+', price_range)
+            if len(price_numbers) >= 2:
+                supplier_min = int(price_numbers[0])
+                supplier_max = int(price_numbers[1])
+                
+                if supplier_min <= marketplace_avg_price <= supplier_max:
+                    score += 25
+                elif abs(marketplace_avg_price - supplier_min) < marketplace_avg_price * 0.5:
+                    score += 15
+        
+        # Brand positioning match
+        brand_positioning = marketplace_analysis['brand_analysis']['positioning']
+        if brand_positioning == 'premium' and 'premium' in supplier['description'].lower():
+            score += 15
+        elif brand_positioning == 'value' and any(word in supplier['description'].lower() 
+                                                for word in ['affordable', 'value', 'budget']):
+            score += 15
+        
+        # International shipping bonus
+        if supplier['international_shipping'] == 'Yes':
+            score += 10
+        
+        # Add some randomness for variety
+        score += random.randint(0, 10)
+        
+        return min(100, score)  # Cap at 100
+    
+    def save_results(self, marketplace_analysis, suppliers):
+        """Save analysis results to files"""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Save CSV
+        df = pd.DataFrame(suppliers)
+        csv_filename = f'matching_results_{timestamp}.csv'
+        df.to_csv(csv_filename, index=False)
+        
+        # Save JSON summary
+        summary = {
+            'marketplace_analysis': marketplace_analysis,
+            'supplier_recommendations': suppliers,
+            'summary_stats': {
+                'total_suppliers': len(suppliers),
+                'avg_compatibility_score': sum(s['compatibility_score'] for s in suppliers) / len(suppliers) if suppliers else 0,
+                'top_categories': marketplace_analysis['categories'][:5]
+            }
+        }
+        
+        json_filename = f'matching_results_{timestamp}_summary.json'
+        with open(json_filename, 'w') as f:
+            json.dump(summary, f, indent=2)
+        
+        print(f"💾 Results saved:")
+        print(f"   CSV: {csv_filename}")
+        print(f"   JSON: {json_filename}")
+        
+        return csv_filename, json_filename
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python github_actions_marketplace_analyzer.py <marketplace_url> [max_suppliers]")
+        sys.exit(1)
+    
+    marketplace_url = sys.argv[1]
+    max_suppliers = int(sys.argv[2]) if len(sys.argv) > 2 else 20
+    
+    print(f"🚀 GitHub Actions Marketplace Analyzer")
+    print(f"   Marketplace: {marketplace_url}")
+    print(f"   Max suppliers: {max_suppliers}")
+    print("=" * 60)
+    
+    analyzer = MarketplaceAnalyzer(marketplace_url, max_suppliers)
+    
+    # Analyze marketplace
+    marketplace_analysis = analyzer.analyze_marketplace()
+    if not marketplace_analysis:
+        print("❌ Failed to analyze marketplace")
+        sys.exit(1)
+    
+    # Generate supplier recommendations
+    suppliers = analyzer.generate_supplier_recommendations(marketplace_analysis)
+    
+    # Save results
+    csv_file, json_file = analyzer.save_results(marketplace_analysis, suppliers)
+    
+    print("\n" + "=" * 60)
+    print("✅ Analysis completed successfully!")
+    print(f"📊 Marketplace: {marketplace_analysis['title']}")
+    print(f"🏷️  Categories: {', '.join(marketplace_analysis['categories'][:3])}")
+    print(f"💰 Avg Price: ${marketplace_analysis['price_analysis']['average_price']}")
+    print(f"🎯 Suppliers: {len(suppliers)} recommendations generated")
+    print(f"📁 Files: {csv_file}, {json_file}")
+
+if __name__ == "__main__":
+    main()
+EOF
+          
+          chmod +x scripts/github_actions_marketplace_analyzer.py
+          echo "✅ Created optimized marketplace analyzer script"
+          
+      - name: Commit and push the new script
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add scripts/
+          git commit -m "Add optimized marketplace analyzer for GitHub Actions" || echo "No changes to commit"
+          git push || echo "Nothing to push"
+          
+      - name: Upload script
+        uses: actions/upload-artifact@v4
+        with:
+          name: marketplace-analyzer-script
+          path: scripts/github_actions_marketplace_analyzer.py
